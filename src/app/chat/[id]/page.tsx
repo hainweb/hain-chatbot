@@ -5,6 +5,10 @@ import { connectToDb, getDb } from "@/lib/db";
 
 
 
+type Props = {
+  params: { id: string };
+};
+
 interface Message {
   _id: string;
   chatId: string;
@@ -15,7 +19,7 @@ interface Message {
   fileNames?: string[];
 }
 
-export default async function ChatPage({ params }: { params: { id: string } }) {
+export default async function ChatPage({ params }: Props) {
   const chatId = params.id;
 
   let initialMessages: Message[] = [];
