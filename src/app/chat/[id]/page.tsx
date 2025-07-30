@@ -3,9 +3,7 @@ import ChatClient from "./ChatClient";
 import { ObjectId } from "mongodb";
 import { connectToDb, getDb } from "@/lib/db";
 
-interface Props {
-  params: { id: string };
-}
+
 
 interface Message {
   _id: string;
@@ -17,7 +15,7 @@ interface Message {
   fileNames?: string[];
 }
 
-export default async function ChatPage({ params }: Props) {
+export default async function ChatPage({ params }: { params: { id: string } }) {
   const chatId = params.id;
 
   let initialMessages: Message[] = [];
