@@ -24,57 +24,11 @@ export const MessageBubble = ({
   isNewMessage?: boolean;
   firstMessage: boolean;
 }) => {
-  const [displayedContent, setDisplayedContent] = useState("");
-  const [isComplete, setIsComplete] = useState(false);
-  const [shouldAnimate, setShouldAnimate] = useState(false);
-
-  useEffect(() => {
-    const isAIMessage = message.role !== "user";
-
-    if (isAIMessage && (isNewMessage || firstMessage)) {
-      setShouldAnimate(true);
-      setDisplayedContent("");
-      setIsComplete(false);
-    } else {
-      setShouldAnimate(false);
-      setDisplayedContent(message.content);
-      setIsComplete(true);
-    }
-  }, [firstMessage, isNewMessage, message.content, message.role]);
-
-  useEffect(() => {
-    if (!shouldAnimate) {
-      return;
-    }
-
-    let index = 0;
-    const content = message.content;
-    let timeoutId: NodeJS.Timeout;
-
-    const typeWriter = () => {
-      if (index < content.length) {
-        setDisplayedContent(content.slice(0, index + 1));
-        index++;
-
-        timeoutId = setTimeout(typeWriter, 2);
-      } else {
-        setIsComplete(true);
-      }
-    };
-
-    timeoutId = setTimeout(typeWriter, 10);
-
-    return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    };
-  }, [message.content, shouldAnimate]);
-
-  const isUser = message.role === "user";
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
-  const formatContent = (content: string) => {
+  const isUser = message.role === "user";
+
+ const formatContent = (content: string) => {
     const lines = content.split("\n");
     const elements: JSX.Element[] = [];
     let inCodeBlock = false;
@@ -272,6 +226,7 @@ export const MessageBubble = ({
             {message.tool === "WEB SEARCH" ? "Searched from Web" : ""}
           </div>
         )}
+        
         {isUser && (message.fileNames?.length ?? 0) > 0 && (
           <div className="mb-2">
             <div className="relative p-4 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl bg-white/10 dark:bg-gray-900 text-white ml-8 border border-white/10">
@@ -299,6 +254,7 @@ export const MessageBubble = ({
             </div>
           </div>
         )}
+        
         {/* Premium message bubble */}
         <div
           className={`relative p-6 rounded-3xl shadow-lg transition-all duration-300 hover:shadow-xl ${
@@ -312,9 +268,9 @@ export const MessageBubble = ({
             <div className="absolute inset-0 bg-gradient-to-br from-violet-50/30 to-transparent dark:from-violet-900/10 rounded-3xl pointer-events-none"></div>
           )}
 
-          {/* Content */}
+          {/* Content - No animation, just display the content directly */}
           <div className="relative font-medium leading-relaxed text-[15px]">
-            {formatContent(displayedContent)}
+            {formatContent(message.content)}
           </div>
 
           {/* Enhanced message bubble tail */}
@@ -328,27 +284,13 @@ export const MessageBubble = ({
         </div>
 
         {/* Enhanced timestamp */}
-        <div
+     {/*    <div
           className={`text-xs text-gray-400 dark:text-gray-500 mt-2 font-medium ${
             isUser ? "text-right" : "text-left"
           }`}
         >
-          <div
-            className={`text-xs text-gray-400 dark:text-gray-500 mt-2 font-medium ${
-              isUser ? "text-right" : "text-left"
-            }`}
-          >
-            {isComplete && (
-              <div
-                className={`text-xs text-gray-400 dark:text-gray-500 mt-2 font-medium ${
-                  isUser ? "text-right" : "text-left"
-                }`}
-              >
-                <MessageTime createdAt={message.createdAt} />
-              </div>
-            )}
-          </div>
-        </div>
+          <MessageTime createdAt={message.createdAt} />
+        </div> */}
       </div>
     </div>
   );

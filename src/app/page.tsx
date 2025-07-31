@@ -61,6 +61,7 @@ export default function ChatPage() {
 
                       {/* Web Search loading*/}
                       {isTyping &&
+                        messages.length > 0 &&
                         messages[messages.length - 1]?.tool === "search" && (
                           <div className="flex justify-start mb-2">
                             <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-md border border-gray-200 dark:border-gray-700 w-fit max-w-sm px-4 py-3">

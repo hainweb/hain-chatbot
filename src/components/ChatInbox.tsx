@@ -241,7 +241,16 @@ const SearchInputComponent: React.FC<SearchInputComponentProps> = ({
   };
 
   const handleSend = async () => {
+    interface Chat {
+      _id: string;
+      userId: string;
+      title: string;
+      createdAt: string;
+      updatedAt: string;
+    }
+
     const fileNames = uploadedFiles.map((file) => file.name).filter(Boolean);
+
     const userMessage: Message = {
       _id: new Date().toISOString(),
       chatId: chatId ?? "",
@@ -251,12 +260,12 @@ const SearchInputComponent: React.FC<SearchInputComponentProps> = ({
       tool: selectedTool?.id,
       ...(fileNames.length > 0 && { fileNames }),
     };
+
     setMessages((prev) => [...prev, userMessage]);
-
     setInputValue("");
-
     setUploadedFiles([]);
     setIsTyping(true);
+
     try {
       let endpoint = "";
       interface Payload {
@@ -266,6 +275,7 @@ const SearchInputComponent: React.FC<SearchInputComponentProps> = ({
         files?: { name: string; size: number; type: string }[];
         tool?: string;
       }
+
       const payload: Payload = {
         question: inputValue,
         chatId: chatId ?? "",
@@ -281,60 +291,163 @@ const SearchInputComponent: React.FC<SearchInputComponentProps> = ({
           type: file.type,
         }));
         payload.tool = "LLM";
+
+        const response = await axios.post(endpoint, payload, {
+          withCredentials: true,
+        });
+
+        const assistantMessage: Message = {
+          _id: new Date().toISOString(),
+          chatId: response.data.chatId,
+          createdAt: new Date().toISOString(),
+          role: "assistant",
+          content: response.data.answer,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        if (!chatId) {
+          const newChat: Chat = {
+            _id: response.data.chatId,
+            userId: "",
+            title: inputValue || "New Chat",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          dispatch(setChats([newChat, ...chats]));
+          router.push(`/chat/${response.data.chatId}`);
+        }
       } else if (selectedTool?.id === "search") {
         endpoint = `${BASE_URL}/search-web`;
         payload.tool = "WEB SEARCH";
+
+        const response = await axios.post(endpoint, payload, {
+          withCredentials: true,
+        });
+
+        const assistantMessage: Message = {
+          _id: new Date().toISOString(),
+          chatId: response.data.chatId,
+          createdAt: new Date().toISOString(),
+          role: "assistant",
+          content: response.data.answer,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        if (!chatId) {
+          const newChat: Chat = {
+            _id: response.data.chatId,
+            userId: "",
+            title: inputValue || "New Chat",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          dispatch(setChats([newChat, ...chats]));
+          router.push(`/chat/${response.data.chatId}`);
+        }
       } else {
+        // STREAMING version
         endpoint = `${BASE_URL}/ask-question`;
         payload.tool = "LLM";
-      }
 
-      const response = await axios.post(endpoint, payload, {
-        withCredentials: true,
-      });
-      console.log("Response:", response.data);
+        console.log("Sending payload:", payload);
 
-      const assistantMessage: Message = {
-        _id: new Date().toISOString(),
-        chatId: response.data.chatId,
-        createdAt: new Date().toISOString(),
-        role: "assistant",
-        content: response.data.answer,
-      };
-
-      if (chatId) {
-        console.log("There is chatId, added new messages ti chat");
-
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        console.log("There us no chatId , navigate to chat");
-      }
-
-      if (!chatId) {
-        console.log("There is no chatId, navigate to chat");
-        setFirstMessage(true);
-
-        interface Chat {
-          _id: string;
-          userId: string;
-          title: string;
-          createdAt: string;
-          updatedAt: string;
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+        for (const [key, value] of response.headers.entries()) {
+          console.log(`${key}: ${value}`);
         }
-        const newChat: Chat = {
-          _id: response.data.chatId,
-          userId: "",
+
+        const backendChatId = response.headers.get("x-chat-id");
+
+        if (!chatId && !backendChatId) {
+          throw new Error("Chat ID not received from backend for new chat");
+        }
+
+        const finalChatId = chatId || backendChatId;
+
+        if (!response.body) throw new Error("No response body for streaming");
+        if (!finalChatId) throw new Error("Final chat ID is null or undefined");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        const assistantMessage: Message = {
+          _id: new Date().toISOString(),
+          chatId: finalChatId,
           createdAt: new Date().toISOString(),
-          title: inputValue || "New Chat",
-          updatedAt: new Date().toISOString(),
+          role: "assistant",
+          content: "",
         };
 
-        dispatch(setChats([newChat, ...chats]));
+        setMessages((prev) => [...prev, assistantMessage]);
 
-        router.push(`/chat/${response.data.chatId}`);
+        let assistantContent = "";
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+              break;
+            }
+
+            const chunk = decoder.decode(value, { stream: true });
+
+            assistantContent += chunk;
+
+            setMessages((prevMessages) => {
+              return prevMessages.map((msg) =>
+                msg._id === assistantMessage._id
+                  ? { ...msg, content: assistantContent }
+                  : msg
+              );
+            });
+          }
+        } catch (streamError) {
+          setMessages((prevMessages) => {
+            return prevMessages.map((msg) =>
+              msg._id === assistantMessage._id
+                ? {
+                    ...msg,
+                    content:
+                      assistantContent ||
+                      "⚠️ Error occurred while streaming response",
+                  }
+                : msg
+            );
+          });
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (!chatId && finalChatId) {
+          setFirstMessage(true);
+          const newChat: Chat = {
+            _id: finalChatId,
+            userId: "",
+            createdAt: new Date().toISOString(),
+            title: inputValue || "New Chat",
+            updatedAt: new Date().toISOString(),
+          };
+          dispatch(setChats([newChat, ...chats]));
+          router.push(`/chat/${finalChatId}`);
+        }
       }
     } catch (error) {
-      console.error("Sending error:", error);
+      const errorMessage: Message = {
+        _id: new Date().toISOString(),
+        chatId: chatId ?? "",
+        createdAt: new Date().toISOString(),
+        role: "assistant",
+        content: "⚠️ Sorry, I encountered an error. Please try again.",
+      };
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsTyping(false);
     }
