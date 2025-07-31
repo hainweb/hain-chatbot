@@ -292,30 +292,87 @@ const SearchInputComponent: React.FC<SearchInputComponentProps> = ({
         }));
         payload.tool = "LLM";
 
-        const response = await axios.post(endpoint, payload, {
-          withCredentials: true,
-        });
+       const response = await fetch(endpoint, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  credentials: "include",
+  body: JSON.stringify(payload),
+});
 
-        const assistantMessage: Message = {
-          _id: new Date().toISOString(),
-          chatId: response.data.chatId,
-          createdAt: new Date().toISOString(),
-          role: "assistant",
-          content: response.data.answer,
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
+for (const [key, value] of response.headers.entries()) {
+  console.log(`${key}: ${value}`);
+}
 
-        if (!chatId) {
-          const newChat: Chat = {
-            _id: response.data.chatId,
-            userId: "",
-            title: inputValue || "New Chat",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          dispatch(setChats([newChat, ...chats]));
-          router.push(`/chat/${response.data.chatId}`);
-        }
+const backendChatId = response.headers.get("x-chat-id");
+if (!chatId && !backendChatId) {
+  throw new Error("Chat ID not received from backend for new chat");
+}
+
+const finalChatId = chatId || backendChatId;
+if (!response.body) throw new Error("No response body for streaming");
+if (!finalChatId) throw new Error("Final chat ID is null or undefined");
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+const assistantMessage: Message = {
+  _id: new Date().toISOString(),
+  chatId: finalChatId,
+  createdAt: new Date().toISOString(),
+  role: "assistant",
+  content: "",
+};
+
+setMessages((prev) => [...prev, assistantMessage]);
+
+let assistantContent = "";
+
+try {
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    assistantContent += chunk;
+
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) =>
+        msg._id === assistantMessage._id
+          ? { ...msg, content: assistantContent }
+          : msg
+      )
+    );
+  }
+} catch (err) {
+  setMessages((prevMessages) =>
+    prevMessages.map((msg) =>
+      msg._id === assistantMessage._id
+        ? {
+            ...msg,
+            content: assistantContent || "⚠️ Error occurred while streaming response",
+          }
+        : msg
+    )
+  );
+} finally {
+  reader.releaseLock();
+}
+
+if (!chatId && finalChatId) {
+  const newChat: Chat = {
+    _id: finalChatId,
+    userId: "",
+    createdAt: new Date().toISOString(),
+    title: inputValue || "New Chat",
+    updatedAt: new Date().toISOString(),
+  };
+  dispatch(setChats([newChat, ...chats]));
+  router.push(`/chat/${finalChatId}`);
+}
+
       } else if (selectedTool?.id === "search") {
         endpoint = `${BASE_URL}/search-web`;
         payload.tool = "WEB SEARCH";
