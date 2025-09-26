@@ -7,6 +7,14 @@ import Layout from "./LayoutPage";
 import { MessageBubble } from "@/components/MessageBubble";
 import { TypingAnimation } from "@/components/TypingAnimation";
 import WebSearchLoading from "@/components/WebSearchLoading";
+import { useDispatch, useSelector } from "react-redux";
+import { setUser, clearUser } from "@/app/store/slices/userSlice";
+import axios from "axios";
+
+import { BASE_URL } from "@/utils/api";
+import { useRouter } from "next/navigation";
+import { RootState } from "@/app/store/store";
+import LoadingSpinner from "@/components/LoadingSpinner";
 
 export default function ChatPage() {
   interface Message {
@@ -22,10 +30,44 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [firstMessage, setFirstMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
+
+  const dispatch = useDispatch();
+  const router = useRouter();
+
+  const user = useSelector((state: RootState) => state.user.user);
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const response = await axios.get(`${BASE_URL}/auth/me`, {
+          withCredentials: true,
+        });
+        console.log("me response", response);
+
+        if (response.data.status) {
+          console.log("user is logined");
+
+          dispatch(setUser(response.data.user));
+        } else {
+          dispatch(clearUser());
+          router.push("/auth/login");
+        }
+      } catch (error) {
+        console.log("error getting user", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    getUser();
+  }, [dispatch, router]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden justify-center ">
