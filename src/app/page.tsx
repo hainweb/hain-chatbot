@@ -39,7 +39,10 @@ export default function ChatPage() {
   useEffect(() => {
     const getUser = async () => {
       try {
-        axios.post(process.env.ANALYTICS_URL!, { platform: "hainchat" });
+        axios.post(process.env.NEXT_PUBLIC_ANALYTICS_URL!, {
+          platform: "hainchat",
+        });
+
         const response = await axios.get(`${BASE_URL}/auth/me`, {
           withCredentials: true,
         });
