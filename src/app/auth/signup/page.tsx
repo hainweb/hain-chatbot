@@ -84,6 +84,11 @@ export default function SignupPage() {
       return;
     }
 
+    if(password.length <6){
+      setErrorMessage("Password must be exactly 6 digits")
+      return
+    }
+
     setIsLoading(true);
     try {
       const res = await axios.post(
