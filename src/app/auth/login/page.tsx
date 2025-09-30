@@ -12,8 +12,6 @@ import { setUser, clearUser } from "@/app/store/slices/userSlice";
 
 import { clearChats } from "@/app/store/slices/chatSlice";
 
-
-
 export default function AuthButton() {
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.user.user);
@@ -23,9 +21,29 @@ export default function AuthButton() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+
+  const [isTimer, setIsTimer] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const router = useRouter();
+
+  useEffect(() => {
+    if (timeLeft !== null && timeLeft > 0) {
+      const timer = window.setInterval(() => {
+        setTimeLeft((prevTime) => {
+          if (prevTime !== null && prevTime <= 1) {
+            clearInterval(timer);
+            setIsTimer(false);
+            return 0;
+          }
+          return (prevTime ?? 1) - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }
+  }, [timeLeft]);
 
   useEffect(() => {
     console.log("session in login page:", session);
@@ -134,10 +152,16 @@ export default function AuthButton() {
         // localStorage.setItem("user", JSON.stringify(result.data.user));
         router.push("/");
       } else {
-        setErrorMessage(result.data.message || "Incorrect email or password.");
+        if (result.data.timeLeft) {
+          setTimeLeft(result.data.timeLeft);
+          setIsTimer(true);
+        } else {
+          setErrorMessage(
+            result.data.message || "Incorrect email or password."
+          );
+        }
       }
-    }
- finally {
+    } finally {
       setIsLoading(false);
     }
   };
@@ -196,10 +220,18 @@ export default function AuthButton() {
                 {errorMessage}
               </div>
             )}
+            {isTimer && (
+              <div className="text-red-600 text-sm mt-2 text-center">
+                <p>
+                  Too many failed attempts. Please try again in {timeLeft}{" "}
+                  seconds.
+                </p>
+              </div>
+            )}
 
             <button
               onClick={handleContinue}
-              disabled={isLoading || (showPassword && !password)}
+              disabled={isTimer || isLoading || (showPassword && !password)}
               className="w-full bg-black text-white py-3 rounded-3xl font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mt-6 cursor-pointer"
             >
               {isLoading ? (
