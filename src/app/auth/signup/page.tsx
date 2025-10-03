@@ -2,7 +2,7 @@
 
 import { BASE_URL } from "@/utils/api";
 import { signIn, useSession } from "next-auth/react";
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/app/store/store";
 import { setUser, clearUser } from "@/app/store/slices/userSlice";
@@ -16,9 +16,13 @@ export default function SignupPage() {
   const [name, setName] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
-  const [showSignupFields, setShowSignupFields] = useState<boolean>(false);
+  const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
+  const [showOtpField, setShowOtpField] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [otpSent, setOtpSent] = useState<boolean>(false);
+
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((state: RootState) => state.user.user);
@@ -60,7 +64,40 @@ export default function SignupPage() {
   const isValidEmail = (email: string): boolean =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const handleContinue = async (e: FormEvent<HTMLButtonElement>) => {
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+
+    const newOtp = [...otp];
+    newOtp[index] = value.slice(-1);
+    setOtp(newOtp);
+
+    if (value && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData("text").slice(0, 6);
+    if (!/^\d+$/.test(pastedData)) return;
+
+    const newOtp = [...otp];
+    for (let i = 0; i < pastedData.length; i++) {
+      newOtp[i] = pastedData[i];
+    }
+    setOtp(newOtp);
+
+    const nextIndex = Math.min(pastedData.length, 5);
+    otpInputRefs.current[nextIndex]?.focus();
+  };
+
+  const handleSendOtp = async (e: FormEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setErrorMessage("");
 
@@ -69,13 +106,13 @@ export default function SignupPage() {
       return;
     }
 
-    if (!showSignupFields) {
-      setShowSignupFields(true);
+    if (!name) {
+      setErrorMessage("Please enter your name.");
       return;
     }
 
-    if (!name || !password || !confirmPassword) {
-      setErrorMessage("Please fill in all fields.");
+    if (!password || !confirmPassword) {
+      setErrorMessage("Please fill in all password fields.");
       return;
     }
 
@@ -84,24 +121,58 @@ export default function SignupPage() {
       return;
     }
 
-    if(password.length <6){
-      setErrorMessage("Password must be exactly 6 digits")
-      return
+    if (password.length < 6) {
+      setErrorMessage("Password must be at least 6 characters.");
+      return;
     }
 
     setIsLoading(true);
     try {
       const res = await axios.post(
-        `${BASE_URL}/signup`,
+        `${BASE_URL}/auth/send-otp`,
+        { email },
+        { withCredentials: true }
+      );
+
+      if (res.data.status) {
+        setOtpSent(true);
+        setShowOtpField(true);
+      } else {
+        setErrorMessage(res.data.message || "Failed to send OTP.");
+      }
+    } catch (error: unknown) {
+      
+      const err = error as AxiosError<{ message: string }>;
+      setErrorMessage(err.response?.data?.message || "Failed to send OTP.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyAndSignup = async (e: FormEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setErrorMessage("");
+
+    const otpValue = otp.join("");
+    if (otpValue.length !== 6) {
+      setErrorMessage("Please enter the complete 6-digit OTP.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await axios.post(
+        `${BASE_URL}/auth/signup`,
         {
           name,
           email,
           password,
+          otp: otpValue,
         },
         { withCredentials: true }
       );
 
-      console.log("signup res is", res);
+     
 
       if (res.data.status) {
         router.push("/");
@@ -134,38 +205,89 @@ export default function SignupPage() {
           </div>
 
           <div className="space-y-4">
+            {!showOtpField && (
+            <>
+              
             <input
               type="email"
+              name="email"
               placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
-              className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading || otpSent}
+              className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
             />
 
-            {showSignupFields && (
+            <input
+              type="text"
+              placeholder="Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={isLoading || otpSent}
+              className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            />
+
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading || otpSent}
+              className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            />
+
+            <input
+              type="password"
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={isLoading || otpSent}
+              className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            />
+
+            {!otpSent && (
+              <button
+                onClick={handleSendOtp}
+                disabled={isLoading || !email || !name || !password || !confirmPassword}
+                className="w-full bg-black text-white py-3 rounded-3xl font-medium hover:bg-gray-800 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isLoading ? "Sending OTP..." : "Send OTP"}
+              </button>
+            )}
+</>
+            )}
+
+            {showOtpField && (
               <>
-                <input
-                  type="text"
-                  placeholder="Name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500"
-                />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500"
-                />
-                <input
-                  type="password"
-                  placeholder="Confirm Password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-3xl border border-gray-300 text-black placeholder-gray-500"
-                />
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700 text-center">
+                    Enter 6-digit OTP sent to {email}
+                  </label>
+                  <div className="flex justify-center gap-2">
+                    {otp.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={(el) => {otpInputRefs.current[index] = el}}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleOtpChange(index, e.target.value)}
+                        onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                        onPaste={index === 0 ? handleOtpPaste : undefined}
+                        className="w-12 h-12 text-center text-xl font-semibold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleVerifyAndSignup}
+                  disabled={isLoading || otp.join("").length !== 6}
+                  className="w-full bg-black text-white py-3 rounded-3xl font-medium hover:bg-gray-800 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isLoading ? "Verifying..." : "Verify OTP & Sign Up"}
+                </button>
               </>
             )}
 
@@ -174,18 +296,6 @@ export default function SignupPage() {
                 {errorMessage}
               </div>
             )}
-
-            <button
-              onClick={handleContinue}
-              disabled={
-                isLoading ||
-                !email ||
-                (showSignupFields && (!name || !password || !confirmPassword))
-              }
-              className="w-full bg-black text-white py-3 rounded-3xl font-medium hover:bg-gray-800 transition-colors cursor-pointer"
-            >
-              {isLoading ? "Processing..." : "Continue"}
-            </button>
           </div>
 
           <div className="text-center mt-6">
