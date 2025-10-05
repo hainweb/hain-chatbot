@@ -101,7 +101,6 @@ export default function SignupPage() {
         { withCredentials: true }
       );
 
-      console.log("signup res is", res);
 
       if (res.data.status) {
         router.push("/");
